@@ -9,18 +9,20 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
-import net.minecraft.client.gui.components.CommandSuggestions;
-import net.minecraft.commands.SharedSuggestionProvider;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class CustomChatScreen extends ChatScreen {
     private EditBox customInput;
-    private CommandSuggestions commandSuggestions;
     private static final int MAX_CHAT_LINES = 10;
     private final String defaultText;
     private int inputY;
+    
+    // TAB автодополнение
+    private List<String> suggestions = new ArrayList<>();
+    private int suggestionIndex = 0;
+    private String lastTabText = "";
 
     public CustomChatScreen(String defaultText) {
         super(defaultText);
@@ -61,20 +63,10 @@ public class CustomChatScreen extends ChatScreen {
         this.addRenderableWidget(this.customInput);
         this.setInitialFocus(this.customInput);
         
-        // Подсказки команд (TAB)
-        this.commandSuggestions = new CommandSuggestions(
-            this.minecraft,
-            this,
-            this.customInput,
-            this.font,
-            false,
-            false,
-            1,
-            10,
-            true,
-            -805306368
-        );
-        this.commandSuggestions.updateCommandInfo();
+        // Сбрасываем подсказки
+        suggestions.clear();
+        suggestionIndex = 0;
+        lastTabText = "";
     }
 
     @Override
@@ -116,12 +108,31 @@ public class CustomChatScreen extends ChatScreen {
         
         this.customInput.render(poseStack, mouseX, mouseY, partialTick);
         
-        // Рендер подсказок команд
-        this.commandSuggestions.render(poseStack, mouseX, mouseY);
+        // Рендерим подсказки команд
+        renderSuggestions(poseStack);
         
-        String hint = "§7[Enter] §fОтправить  §7[Esc] §fЗакрыть  §7[↑↓] §fИстория  §7[Tab] §fКоманды";
+        String hint = "§7[Enter] §fОтправить  §7[Esc] §fЗакрыть  §7[↑↓] §fИстория  §7[TAB] §fКоманды";
         int hintWidth = this.font.width(hint);
         this.font.drawShadow(poseStack, hint, this.width / 2f - hintWidth / 2f, this.inputY + 25, 0xAAAAAA);
+    }
+    
+    private void renderSuggestions(PoseStack poseStack) {
+        if (suggestions.isEmpty()) return;
+        
+        int x = this.width / 2 - 175;
+        int y = this.inputY - 5 - (suggestions.size() * 12);
+        
+        // Фон подсказок
+        int width = 350;
+        int height = suggestions.size() * 12 + 4;
+        fill(poseStack, x, y, x + width, y + height, 0xE0202020);
+        
+        // Подсказки
+        for (int i = 0; i < suggestions.size(); i++) {
+            String suggestion = suggestions.get(i);
+            int color = (i == suggestionIndex) ? 0xFFFFFF00 : 0xFFAAAAAA;
+            this.font.drawShadow(poseStack, suggestion, x + 4, y + 2 + i * 12, color);
+        }
     }
 
     private void renderChatHistory(PoseStack poseStack, int x, int y, int maxWidth) {
@@ -133,6 +144,7 @@ public class CustomChatScreen extends ChatScreen {
         }
         
         int lineHeight = 18;
+        int headSize = ChatConfig.getHeadSize();
         
         for (int i = 0; i < messages.size(); i++) {
             ChatHistory.ChatMessage msg = messages.get(i);
@@ -153,7 +165,7 @@ public class CustomChatScreen extends ChatScreen {
                 trimmed += "...";
             }
             
-            int textX = ChatConfig.showPlayerHeads() ? x + 16 : x;
+            int textX = ChatConfig.showPlayerHeads() ? x + headSize + 4 : x;
             this.font.drawShadow(poseStack, trimmed, textX, msgY + 3, 0xFFFFFF);
         }
     }
@@ -174,26 +186,117 @@ public class CustomChatScreen extends ChatScreen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         
+        int size = ChatConfig.getHeadSize();
+        
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, mc.player.getSkinTextureLocation());
         RenderSystem.enableBlend();
         
-        blit(poseStack, x, y, 12, 12, 8.0F, 8.0F, 8, 8, 64, 64);
-        blit(poseStack, x, y, 12, 12, 40.0F, 8.0F, 8, 8, 64, 64);
+        blit(poseStack, x, y, size, size, 8.0F, 8.0F, 8, 8, 64, 64);
+        blit(poseStack, x, y, size, size, 40.0F, 8.0F, 8, 8, 64, 64);
         
         RenderSystem.disableBlend();
+    }
+    
+    private void updateSuggestions() {
+        suggestions.clear();
+        suggestionIndex = 0;
+        
+        String text = this.customInput.getValue();
+        if (!text.startsWith("/")) return;
+        
+        String cmd = text.substring(1).toLowerCase();
+        
+        // Список всех команд
+        String[] allCommands = {
+            "/chat help",
+            "/chat clear",
+            "/chat reload",
+            "/chat name ",
+            "/chat name reset",
+            "/chat color ",
+            "/chat speedrun",
+            "/chat speedrun start",
+            "/chat speedrun stop",
+            "/chat speedrun hide",
+            "/chat speedrun goal ",
+            "/clearchat",
+            "/chatname ",
+            "/chatcolor ",
+            "/gamemode creative",
+            "/gamemode survival",
+            "/gamemode spectator",
+            "/give @s ",
+            "/tp @s ",
+            "/time set day",
+            "/time set night",
+            "/weather clear",
+            "/weather rain",
+            "/kill",
+            "/help"
+        };
+        
+        for (String command : allCommands) {
+            if (command.toLowerCase().startsWith("/" + cmd)) {
+                suggestions.add(command);
+                if (suggestions.size() >= 8) break;
+            }
+        }
+    }
+    
+    private void applySuggestion() {
+        if (suggestions.isEmpty()) return;
+        
+        String suggestion = suggestions.get(suggestionIndex);
+        this.customInput.setValue(suggestion);
+        this.customInput.moveCursorToEnd();
+        
+        // Сбрасываем если команда полная
+        if (!suggestion.endsWith(" ")) {
+            suggestions.clear();
+        }
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // TAB для автодополнения
-        if (keyCode == 258) { // Tab
-            this.commandSuggestions.keyPressed(keyCode, scanCode, modifiers);
+        // TAB - автодополнение
+        if (keyCode == 258) {
+            String currentText = this.customInput.getValue();
+            
+            if (suggestions.isEmpty() || !currentText.equals(lastTabText)) {
+                // Первый TAB или текст изменился — обновляем подсказки
+                updateSuggestions();
+                lastTabText = currentText;
+                
+                if (!suggestions.isEmpty()) {
+                    applySuggestion();
+                    lastTabText = this.customInput.getValue();
+                }
+            } else {
+                // Повторный TAB — следующая подсказка
+                suggestionIndex = (suggestionIndex + 1) % suggestions.size();
+                applySuggestion();
+                lastTabText = this.customInput.getValue();
+            }
             return true;
         }
         
+        // Любая другая клавиша сбрасывает подсказки
+        if (keyCode != 258 && keyCode != 257 && keyCode != 335 && keyCode != 256) {
+            if (!suggestions.isEmpty()) {
+                // Не сбрасываем сразу — даём возможность продолжить ввод
+            }
+        }
+        
         // Стрелка вверх - предыдущее сообщение
-        if (keyCode == 265) { // Up
+        if (keyCode == 265) {
+            if (!suggestions.isEmpty()) {
+                // Если есть подсказки — перемещаемся по ним
+                suggestionIndex = (suggestionIndex - 1 + suggestions.size()) % suggestions.size();
+                applySuggestion();
+                lastTabText = this.customInput.getValue();
+                return true;
+            }
             String prev = ChatHistory.getPreviousMessage();
             if (prev != null) {
                 this.customInput.setValue(prev);
@@ -203,7 +306,14 @@ public class CustomChatScreen extends ChatScreen {
         }
         
         // Стрелка вниз - следующее сообщение
-        if (keyCode == 264) { // Down
+        if (keyCode == 264) {
+            if (!suggestions.isEmpty()) {
+                // Если есть подсказки — перемещаемся по ним
+                suggestionIndex = (suggestionIndex + 1) % suggestions.size();
+                applySuggestion();
+                lastTabText = this.customInput.getValue();
+                return true;
+            }
             String next = ChatHistory.getNextMessage();
             this.customInput.setValue(next);
             this.customInput.moveCursorToEnd();
@@ -212,6 +322,7 @@ public class CustomChatScreen extends ChatScreen {
         
         // Enter - отправка
         if (keyCode == 257 || keyCode == 335) {
+            suggestions.clear();
             String message = this.customInput.getValue().trim();
             if (!message.isEmpty()) {
                 ChatHistory.addSentMessage(message);
@@ -226,6 +337,10 @@ public class CustomChatScreen extends ChatScreen {
         
         // Escape - закрыть
         if (keyCode == 256) {
+            if (!suggestions.isEmpty()) {
+                suggestions.clear();
+                return true;
+            }
             this.minecraft.setScreen(null);
             return true;
         }
@@ -236,24 +351,16 @@ public class CustomChatScreen extends ChatScreen {
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         boolean result = this.customInput.charTyped(codePoint, modifiers);
-        this.commandSuggestions.updateCommandInfo();
+        
+        // Обновляем подсказки при вводе
+        String text = this.customInput.getValue();
+        if (text.startsWith("/")) {
+            updateSuggestions();
+        } else {
+            suggestions.clear();
+        }
+        
         return result;
-    }
-    
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.commandSuggestions.mouseClicked(mouseX, mouseY, button)) {
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-    
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (this.commandSuggestions.mouseScrolled(delta)) {
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, delta);
     }
     
     @Override

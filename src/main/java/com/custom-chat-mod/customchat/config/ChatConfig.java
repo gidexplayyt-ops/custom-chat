@@ -11,7 +11,7 @@ import java.util.Map;
 
 public class ChatConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_DIR = Paths.get(Minecraft.getInstance().gameDirectory.getPath(), "custom-chat-mod");
+    private static final Path CONFIG_DIR = Paths.get(Minecraft.getInstance().gameDirectory.getPath(), "custom-chat");
     private static final Path CONFIG_FILE = CONFIG_DIR.resolve("config.json");
     
     private static ConfigData config = new ConfigData();
@@ -31,10 +31,20 @@ public class ChatConfig {
     public static class ConfigData {
         public String customNickname = null;
         public String nicknameColor = "§f";
-        public int chatPositionX = 50; // процент от ширины экрана
-        public int chatPositionY = 85; // процент от высоты экрана
+        public int chatPositionX = 50;
+        public int chatPositionY = 85;
         public boolean showPlayerHeads = true;
-        public int messageDuration = 10; // секунд
+        public int messageDuration = 10;
+        public int headSize = 16; // Размер головы
+        public String speedrunGoal = "Убить Дракона";
+    }
+    
+    public static Path getConfigDir() {
+        return CONFIG_DIR;
+    }
+    
+    public static Path getHeadsDir() {
+        return CONFIG_DIR.resolve("heads");
     }
     
     public static void loadConfig() {
@@ -43,10 +53,17 @@ public class ChatConfig {
                 Files.createDirectories(CONFIG_DIR);
             }
             
+            // Создаём папку heads
+            Path headsDir = getHeadsDir();
+            if (!Files.exists(headsDir)) {
+                Files.createDirectories(headsDir);
+            }
+            
             if (Files.exists(CONFIG_FILE)) {
                 Reader reader = Files.newBufferedReader(CONFIG_FILE);
                 config = GSON.fromJson(reader, ConfigData.class);
                 reader.close();
+                if (config == null) config = new ConfigData();
             } else {
                 saveConfig();
             }
@@ -69,6 +86,11 @@ public class ChatConfig {
         }
     }
     
+    public static void reload() {
+        loadConfig();
+        HeadConfig.loadHeads();
+    }
+    
     // Позиция чата
     public static int getChatPositionX() {
         return config.chatPositionX;
@@ -85,6 +107,16 @@ public class ChatConfig {
     
     public static void setChatPositionY(int y) {
         config.chatPositionY = Math.max(0, Math.min(100, y));
+        saveConfig();
+    }
+    
+    // Размер головы
+    public static int getHeadSize() {
+        return config.headSize;
+    }
+    
+    public static void setHeadSize(int size) {
+        config.headSize = Math.max(8, Math.min(32, size));
         saveConfig();
     }
     
@@ -135,6 +167,16 @@ public class ChatConfig {
     
     public static String getNicknameColor() {
         return config.nicknameColor;
+    }
+    
+    // Speedrun Goal
+    public static String getSpeedrunGoal() {
+        return config.speedrunGoal;
+    }
+    
+    public static void setSpeedrunGoal(String goal) {
+        config.speedrunGoal = goal;
+        saveConfig();
     }
     
     // Цвета NPC

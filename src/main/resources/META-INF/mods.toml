@@ -1,24 +1,60 @@
 modLoader="javafml"
 loaderVersion="[43,)"
 license="MIT"
-issueTrackerURL="https://github.com/gidexplayyt-ops/custom-chat-mod/issues"
+issueTrackerURL="https://github.com/gidexplayyt-ops/custom-chat/issues"
 
 [[mods]]
 modId="customchat"
-version="2.0.0-1.19.2"
-displayName="Custom Chat Mod"
-displayURL="https://github.com/gidexplayyt-ops/custom-chat-mod"
+version="2.1.0"
+displayName="Custom Chat"
+displayURL="https://github.com/gidexplayyt-ops/custom-chat"
 authors="GidexPlayYT"
 description='''
 Кастомный чат для Minecraft с расширенными возможностями.
 
-Что нового в v2.0.0:
-- GUI настроек (F7) с перетаскиванием позиции
-- История сообщений (стрелки вверх/вниз)
-- TAB автодополнение команд
-- Конфиг файлы в .minecraft/custom-chat-mod/
-- Настройка голов NPC в heads.json
-'''
+§6Что нового в v2.1.0:
+
+§e§lСпидран режим:
+§7- Таймер с миллисекундами
+§7- Цели: §fminecraft:diamond §7или §fkill:ender_dragon
+§7- Автоматическая остановка при выполнении
+§7- Результат остаётся на экране
+§7- Зелёная рамка при завершении
+§7- Полоса прогресса
+§7- Свечение игрока (опционально)
+§7- Вкладка "Спидран" в настройках (F7)
+
+§e§lКастомные головы:
+§7- Папка §f.minecraft/custom-chat/heads/
+§7- PNG файлы для NPC
+§7- Команда §f/chat reload §7для перезагрузки
+§7- Настраиваемый размер (8-32px)
+
+§e§lКоманды:
+§f/chat help §7- Список команд
+§f/chat reload §7- Перезагрузить конфиг
+§f/chat clear §7- Очистить чат
+§f/chat name <ник> §7- Установить ник
+§f/chat color <цвет> §7- Изменить цвет
+
+§e§lСпидран команды:
+§f/chat speedrun §7- Вкл/выкл спидран
+§f/chat speedrun start §7- Начать заново
+§f/chat speedrun stop §7- Остановить
+§f/chat speedrun hide §7- Скрыть результат
+§f/chat speedrun goal <цель> §7- Установить цель
+
+§e§lФорматы целей:
+§fminecraft:diamond §7- Собрать алмазы
+§fminecraft:ender_pearl §7- Собрать эндер-жемчуг
+§fkill:ender_dragon §7- Убить дракона
+§fkill:zombie §7- Убить зомби
+
+§e§lГорячие клавиши:
+§fF7 §7- Настройки чата
+§fT §7- Открыть чат
+§f↑/↓ §7- История сообщений
+§fTAB §7- Автодополнение команд'''
 
 [[dependencies.customchat]]
     modId="forge"
