@@ -2,12 +2,11 @@ package com.yourname.customchat;
 
 public class SpeedrunManager {
     private static boolean active = false;
-    private static boolean completed = false; // Новое: завершён ли спидран
+    private static boolean completed = false;
     private static boolean glowingEnabled = false;
     private static long startTime = 0;
-    private static long endTime = 0; // Новое: время завершения
+    private static long endTime = 0;
     
-    // Типы целей
     public enum GoalType {
         ITEM,
         KILL,
@@ -20,12 +19,17 @@ public class SpeedrunManager {
     private static int goalAmount = 1;
     private static int currentProgress = 0;
     
+    // Кэш для форматированного времени
+    private static String cachedTime = "00:00.00";
+    private static long lastTimeUpdate = 0;
+    
     public static void start() {
         active = true;
         completed = false;
         startTime = System.currentTimeMillis();
         endTime = 0;
         currentProgress = 0;
+        cachedTime = "00:00.00";
     }
     
     public static void stop() {
@@ -33,19 +37,18 @@ public class SpeedrunManager {
         completed = false;
         startTime = 0;
         endTime = 0;
+        cachedTime = "00:00.00";
     }
     
     public static void complete() {
-        // Автоматическое завершение при достижении цели
-        if (!completed) {
+        if (!completed && active) {
             completed = true;
             endTime = System.currentTimeMillis();
-            // НЕ останавливаем active - показатель остаётся!
+            updateCachedTime();
         }
     }
     
     public static void hide() {
-        // Скрыть показатель полностью
         active = false;
         completed = false;
         startTime = 0;
@@ -68,17 +71,8 @@ public class SpeedrunManager {
         return completed;
     }
     
-    public static String getFormattedTime() {
-        if (startTime == 0) return "00:00:00";
-        
-        long elapsed;
-        if (completed && endTime > 0) {
-            // Если завершён — показываем финальное время
-            elapsed = endTime - startTime;
-        } else {
-            // Если ещё идёт — показываем текущее
-            elapsed = System.currentTimeMillis() - startTime;
-        }
+    private static void updateCachedTime() {
+        long elapsed = getElapsedMillis();
         
         long hours = elapsed / 3600000;
         long minutes = (elapsed % 3600000) / 60000;
@@ -86,10 +80,23 @@ public class SpeedrunManager {
         long millis = (elapsed % 1000) / 10;
         
         if (hours > 0) {
-            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+            cachedTime = String.format("%02d:%02d:%02d", hours, minutes, seconds);
         } else {
-            return String.format("%02d:%02d.%02d", minutes, seconds, millis);
+            cachedTime = String.format("%02d:%02d.%02d", minutes, seconds, millis);
         }
+    }
+    
+    public static String getFormattedTime() {
+        if (startTime == 0) return "00:00.00";
+        
+        // Обновляем кэш только раз в 50мс (оптимизация)
+        long now = System.currentTimeMillis();
+        if (!completed && now - lastTimeUpdate > 50) {
+            updateCachedTime();
+            lastTimeUpdate = now;
+        }
+        
+        return cachedTime;
     }
     
     public static long getElapsedMillis() {
@@ -100,7 +107,6 @@ public class SpeedrunManager {
         return System.currentTimeMillis() - startTime;
     }
     
-    // Goal Type
     public static GoalType getGoalType() {
         return goalType;
     }
@@ -109,25 +115,22 @@ public class SpeedrunManager {
         goalType = type;
     }
     
-    // Goal Target
     public static String getGoalTarget() {
         return goalTarget;
     }
     
     public static void setGoalTarget(String target) {
-        goalTarget = target;
+        goalTarget = target != null ? target : "";
     }
     
-    // Goal Display Name
     public static String getGoalDisplayName() {
         return goalDisplayName;
     }
     
     public static void setGoalDisplayName(String name) {
-        goalDisplayName = name;
+        goalDisplayName = name != null ? name : "Без цели";
     }
     
-    // Goal Amount
     public static int getGoalAmount() {
         return goalAmount;
     }
@@ -136,25 +139,22 @@ public class SpeedrunManager {
         goalAmount = Math.max(1, amount);
     }
     
-    // Progress
     public static int getCurrentProgress() {
         return currentProgress;
     }
     
     public static void setCurrentProgress(int progress) {
-        currentProgress = progress;
-        checkCompletion();
+        int oldProgress = currentProgress;
+        currentProgress = Math.max(0, progress);
+        
+        // Проверяем завершение только если прогресс изменился
+        if (currentProgress != oldProgress && currentProgress >= goalAmount && !completed) {
+            complete();
+        }
     }
     
     public static void addProgress(int amount) {
-        currentProgress += amount;
-        checkCompletion();
-    }
-    
-    private static void checkCompletion() {
-        if (currentProgress >= goalAmount && !completed) {
-            complete();
-        }
+        setCurrentProgress(currentProgress + amount);
     }
     
     public static boolean isGoalCompleted() {
@@ -165,10 +165,15 @@ public class SpeedrunManager {
         return currentProgress + "/" + goalAmount;
     }
     
-    // Парсинг цели
+    public static float getProgressPercent() {
+        if (goalAmount <= 0) return 0;
+        return Math.min(1.0f, (float) currentProgress / goalAmount);
+    }
+    
     public static void parseGoal(String input) {
         if (input == null || input.isEmpty()) {
             goalType = GoalType.CUSTOM;
+            goalTarget = "";
             goalDisplayName = "Без цели";
             return;
         }
@@ -182,14 +187,18 @@ public class SpeedrunManager {
         } else if (input.contains(":")) {
             goalType = GoalType.ITEM;
             goalTarget = input;
-            goalDisplayName = "Собрать: " + formatName(input.split(":")[1]);
+            String[] parts = input.split(":");
+            goalDisplayName = "Собрать: " + formatName(parts.length > 1 ? parts[1] : parts[0]);
         } else {
             goalType = GoalType.CUSTOM;
+            goalTarget = input;
             goalDisplayName = input;
         }
     }
     
     private static String formatName(String id) {
+        if (id == null || id.isEmpty()) return "";
+        
         String[] parts = id.split("_");
         StringBuilder result = new StringBuilder();
         for (String part : parts) {
@@ -202,19 +211,16 @@ public class SpeedrunManager {
         return result.toString().trim();
     }
     
-    // Проверка предмета
     public static boolean matchesItemGoal(String itemId) {
-        if (goalType != GoalType.ITEM || !active) return false;
+        if (goalType != GoalType.ITEM || !active || itemId == null) return false;
         return goalTarget.equals(itemId);
     }
     
-    // Проверка моба
     public static boolean matchesKillGoal(String entityId) {
-        if (goalType != GoalType.KILL || !active) return false;
-        return entityId.contains(goalTarget);
+        if (goalType != GoalType.KILL || !active || entityId == null) return false;
+        return entityId.toLowerCase().contains(goalTarget);
     }
     
-    // Glowing
     public static boolean isGlowingEnabled() {
         return glowingEnabled;
     }

@@ -16,21 +16,40 @@ import java.util.List;
 public class ChatHudOverlay {
     private static final int MAX_VISIBLE = 1;
     
+    // Кэш для избежания повторных вычислений
+    private static int cachedScreenWidth = 0;
+    private static int cachedScreenHeight = 0;
+    private static int cachedPosX = 0;
+    private static int cachedPosY = 0;
+    
     public static void render(PoseStack poseStack, Minecraft mc) {
-        if (mc.player == null || mc.options.hideGui) return;
+        if (mc == null || mc.player == null || mc.options.hideGui) return;
         
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
         
-        int posX = (int) (screenWidth * ChatConfig.getChatPositionX() / 100.0);
-        int posY = (int) (screenHeight * ChatConfig.getChatPositionY() / 100.0);
-        
-        if (SpeedrunManager.isActive()) {
-            renderSpeedrunTimer(poseStack, mc, posX, posY);
-            return;
+        // Обновляем кэш позиции только если размер экрана изменился
+        if (screenWidth != cachedScreenWidth || screenHeight != cachedScreenHeight) {
+            cachedScreenWidth = screenWidth;
+            cachedScreenHeight = screenHeight;
+            updateCachedPosition(screenWidth, screenHeight);
         }
         
-        renderChat(poseStack, mc, posX, posY, screenWidth, screenHeight);
+        if (SpeedrunManager.isActive()) {
+            renderSpeedrunTimer(poseStack, mc, cachedPosX, cachedPosY);
+        } else if (ChatHistory.hasMessages()) {
+            renderChat(poseStack, mc, cachedPosX, cachedPosY, screenWidth, screenHeight);
+        }
+    }
+    
+    private static void updateCachedPosition(int screenWidth, int screenHeight) {
+        cachedPosX = (int) (screenWidth * ChatConfig.getChatPositionX() / 100.0);
+        cachedPosY = (int) (screenHeight * ChatConfig.getChatPositionY() / 100.0);
+    }
+    
+    public static void invalidateCache() {
+        cachedScreenWidth = 0;
+        cachedScreenHeight = 0;
     }
     
     private static void renderSpeedrunTimer(PoseStack poseStack, Minecraft mc, int posX, int posY) {
@@ -41,7 +60,7 @@ public class ChatHudOverlay {
         int boxX = posX - boxWidth / 2;
         int boxY = posY - boxHeight / 2;
         
-        // Фон (зелёный если завершён)
+        // Фон
         int bgColor = completed ? 0xCC004400 : 0xCC000000;
         GuiComponent.fill(poseStack, boxX, boxY, boxX + boxWidth, boxY + boxHeight, bgColor);
         
@@ -56,25 +75,18 @@ public class ChatHudOverlay {
         
         // Таймер
         String time = SpeedrunManager.getFormattedTime();
-        String timeColor = completed ? "§a§l" : "§f§l";
-        int timeWidth = mc.font.width(time);
-        mc.font.drawShadow(poseStack, timeColor + time, posX - timeWidth / 2f, boxY + 8, 0xFFFFFF);
+        String timePrefix = completed ? "§a§l" : "§f§l";
+        drawCenteredString(poseStack, mc, timePrefix + time, posX, boxY + 8);
         
         // Статус
         if (completed) {
-            String completeText = "§a§l✓ ЗАВЕРШЕНО!";
-            int completeWidth = mc.font.width(completeText);
-            mc.font.drawShadow(poseStack, completeText, posX - completeWidth / 2f, boxY + 25, 0x00FF00);
+            drawCenteredString(poseStack, mc, "§a§l✓ ЗАВЕРШЕНО!", posX, boxY + 25);
         }
         
         // Цель
         String goal = SpeedrunManager.getGoalDisplayName();
         int goalY = completed ? boxY + 42 : boxY + 28;
-        mc.font.drawShadow(poseStack, "§7" + goal, posX - mc.font.width(goal) / 2f, goalY, 0xAAAAAA);
-        
-        // Прогресс
-        String progress = SpeedrunManager.getProgressText();
-        int progressWidth = mc.font.width(progress);
+        drawCenteredString(poseStack, mc, "§7" + goal, posX, goalY);
         
         // Полоса прогресса
         int barWidth = 180;
@@ -82,25 +94,23 @@ public class ChatHudOverlay {
         int barX = posX - barWidth / 2;
         int barY = completed ? boxY + 58 : boxY + 45;
         
-        // Фон полосы
         GuiComponent.fill(poseStack, barX, barY, barX + barWidth, barY + barHeight, 0xFF333333);
         
-        // Заполнение
-        float progressPercent = (float) SpeedrunManager.getCurrentProgress() / SpeedrunManager.getGoalAmount();
-        progressPercent = Math.min(1.0f, progressPercent);
+        float progressPercent = SpeedrunManager.getProgressPercent();
         int fillWidth = (int) (barWidth * progressPercent);
-        
         int fillColor = completed ? 0xFF00FF00 : 0xFF00AAFF;
         GuiComponent.fill(poseStack, barX, barY, barX + fillWidth, barY + barHeight, fillColor);
         
-        // Текст прогресса
+        // Прогресс текст
+        String progress = SpeedrunManager.getProgressText();
         int progressY = completed ? boxY + 70 : boxY + 56;
-        mc.font.drawShadow(poseStack, progress, posX - progressWidth / 2f, progressY, 0xFFFFFF);
+        drawCenteredString(poseStack, mc, progress, posX, progressY);
         
-        // Подсказка скрыть
+        // Подсказка
         if (completed) {
-            String hideHint = "§8/chat speedrun - скрыть";
-            mc.font.drawShadow(poseStack, hideHint, posX - mc.font.width(hideHint) / 2f, boxY + boxHeight + 5, 0x666666);
+            mc.font.drawShadow(poseStack, "§8/chat speedrun - скрыть", 
+                posX - mc.font.width("/chat speedrun - скрыть") / 2f, 
+                boxY + boxHeight + 5, 0x666666);
         }
     }
     
@@ -108,60 +118,52 @@ public class ChatHudOverlay {
         List<ChatHistory.ChatMessage> messages = ChatHistory.getRecentMessages(MAX_VISIBLE);
         if (messages.isEmpty()) return;
         
-        int headSize = ChatConfig.getHeadSize();
-        int lineHeight = Math.max(headSize + 4, 20);
-        int padding = 8;
-        
-        int visibleCount = 0;
-        int maxTextWidth = 0;
-        
+        // Проверяем есть ли видимые сообщения
+        ChatHistory.ChatMessage visibleMsg = null;
         for (ChatHistory.ChatMessage msg : messages) {
             if (msg.isRecent()) {
-                visibleCount++;
-                String colorCode = getColorForSender(msg.sender, mc);
-                String formattedText = colorCode + msg.sender + "§7: §f" + msg.message;
-                int textWidth = mc.font.width(formattedText);
-                if (textWidth > maxTextWidth) {
-                    maxTextWidth = textWidth;
-                }
+                visibleMsg = msg;
+                break;
             }
         }
         
-        if (visibleCount == 0) return;
+        if (visibleMsg == null) return;
+        
+        int headSize = ChatConfig.getHeadSize();
+        int padding = 8;
+        int lineHeight = Math.max(headSize + 4, 20);
+        
+        String colorCode = getColorForSender(visibleMsg.sender, mc);
+        String formattedText = colorCode + visibleMsg.sender + "§7: §f" + visibleMsg.message;
+        int textWidth = mc.font.width(formattedText);
         
         int headSpace = ChatConfig.showPlayerHeads() ? headSize + 6 : 0;
-        int boxWidth = maxTextWidth + headSpace + padding * 2;
-        if (boxWidth < 150) boxWidth = 150;
-        if (boxWidth > screenWidth - 40) boxWidth = screenWidth - 40;
+        int boxWidth = textWidth + headSpace + padding * 2;
+        boxWidth = Math.max(150, Math.min(boxWidth, screenWidth - 40));
         
-        int boxHeight = visibleCount * lineHeight + padding * 2;
+        int boxHeight = lineHeight + padding * 2;
         int boxX = posX - boxWidth / 2;
         int boxY = posY - boxHeight / 2;
         
-        if (boxX < 5) boxX = 5;
-        if (boxX + boxWidth > screenWidth - 5) boxX = screenWidth - boxWidth - 5;
-        if (boxY < 5) boxY = 5;
-        if (boxY + boxHeight > screenHeight - 5) boxY = screenHeight - boxHeight - 5;
+        // Ограничиваем границы
+        boxX = Math.max(5, Math.min(boxX, screenWidth - boxWidth - 5));
+        boxY = Math.max(5, Math.min(boxY, screenHeight - boxHeight - 5));
         
         GuiComponent.fill(poseStack, boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0xB0101010);
         
-        int y = boxY + padding;
-        for (ChatHistory.ChatMessage msg : messages) {
-            if (!msg.isRecent()) continue;
-            
-            if (ChatConfig.showPlayerHeads()) {
-                renderHead(poseStack, mc, msg.sender, boxX + padding, y, headSize);
-            }
-            
-            String colorCode = getColorForSender(msg.sender, mc);
-            String formattedText = colorCode + msg.sender + "§7: §f" + msg.message;
-            
-            int textX = boxX + padding + headSpace;
-            int textY = y + (headSize - 8) / 2;
-            mc.font.drawShadow(poseStack, formattedText, textX, textY, 0xFFFFFF);
-            
-            y += lineHeight;
+        int contentY = boxY + padding;
+        
+        if (ChatConfig.showPlayerHeads()) {
+            renderHead(poseStack, mc, visibleMsg.sender, boxX + padding, contentY, headSize);
         }
+        
+        int textX = boxX + padding + headSpace;
+        int textY = contentY + (headSize - 8) / 2;
+        mc.font.drawShadow(poseStack, formattedText, textX, textY, 0xFFFFFF);
+    }
+    
+    private static void drawCenteredString(PoseStack poseStack, Minecraft mc, String text, int x, int y) {
+        mc.font.drawShadow(poseStack, text, x - mc.font.width(text) / 2f, y, 0xFFFFFF);
     }
     
     private static void renderHead(PoseStack poseStack, Minecraft mc, String sender, int x, int y, int size) {
@@ -173,12 +175,10 @@ public class ChatHudOverlay {
         if (customTexture != null) {
             RenderSystem.setShaderTexture(0, customTexture);
             GuiComponent.blit(poseStack, x, y, size, size, 0, 0, 64, 64, 64, 64);
-        } else {
-            if (mc.player != null) {
-                RenderSystem.setShaderTexture(0, mc.player.getSkinTextureLocation());
-                GuiComponent.blit(poseStack, x, y, size, size, 8.0F, 8.0F, 8, 8, 64, 64);
-                GuiComponent.blit(poseStack, x, y, size, size, 40.0F, 8.0F, 8, 8, 64, 64);
-            }
+        } else if (mc.player != null) {
+            RenderSystem.setShaderTexture(0, mc.player.getSkinTextureLocation());
+            GuiComponent.blit(poseStack, x, y, size, size, 8.0F, 8.0F, 8, 8, 64, 64);
+            GuiComponent.blit(poseStack, x, y, size, size, 40.0F, 8.0F, 8, 8, 64, 64);
         }
         
         RenderSystem.disableBlend();

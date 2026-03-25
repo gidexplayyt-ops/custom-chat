@@ -14,41 +14,61 @@ public class ChatHistory {
     private static final int MAX_SENT_HISTORY = 100;
     private static int sentHistoryIndex = -1;
     
+    // Кэш для избежания повторных вычислений
+    private static long lastMessageTime = 0;
+    
     public static void addMessage(Component content) {
+        if (content == null) return;
+        
         String text = content.getString();
+        if (text == null || text.isEmpty()) return;
+        
         String sender = "Система";
         String message = text;
         
         if (text.startsWith("<") && text.contains(">")) {
             int endBracket = text.indexOf(">");
-            sender = text.substring(1, endBracket);
-            message = text.substring(endBracket + 1).trim();
-            
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null && sender.equals(mc.player.getName().getString())) {
-                if (ChatConfig.hasCustomNickname()) {
-                    sender = ChatConfig.getCustomNickname();
+            if (endBracket > 1) {
+                sender = text.substring(1, endBracket);
+                message = text.substring(endBracket + 1).trim();
+                
+                // Заменяем свой ник на кастомный
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    String playerName = mc.player.getName().getString();
+                    if (sender.equals(playerName) && ChatConfig.hasCustomNickname()) {
+                        sender = ChatConfig.getCustomNickname();
+                    }
                 }
             }
         }
         
-        for (ChatMessage msg : messages) {
-            msg.hideNow();
+        long currentTime = System.currentTimeMillis();
+        
+        // Скрываем только если прошло меньше 100мс (оптимизация)
+        if (currentTime - lastMessageTime > 100) {
+            for (ChatMessage msg : messages) {
+                msg.hideNow();
+            }
         }
+        lastMessageTime = currentTime;
         
-        messages.add(0, new ChatMessage(sender, message, System.currentTimeMillis()));
+        messages.add(0, new ChatMessage(sender, message, currentTime));
         
+        // Удаляем старые сообщения
         while (messages.size() > MAX_MESSAGES) {
             messages.remove(messages.size() - 1);
         }
     }
     
-    // История отправленных сообщений
     public static void addSentMessage(String message) {
         if (message == null || message.trim().isEmpty()) return;
         
+        message = message.trim();
+        
         // Не добавляем дубликаты подряд
         if (!sentMessages.isEmpty() && sentMessages.get(0).equals(message)) {
+            resetHistoryIndex();
             return;
         }
         
@@ -97,13 +117,20 @@ public class ChatHistory {
     }
     
     public static List<ChatMessage> getRecentMessages(int count) {
-        return messages.subList(0, Math.min(count, messages.size()));
+        int size = Math.min(count, messages.size());
+        if (size == 0) return new ArrayList<>();
+        return new ArrayList<>(messages.subList(0, size));
+    }
+    
+    public static boolean hasMessages() {
+        return !messages.isEmpty();
     }
     
     public static class ChatMessage {
         public final String sender;
         public final String message;
-        public long timestamp;
+        private long timestamp;
+        private boolean hidden = false;
         
         public ChatMessage(String sender, String message, long timestamp) {
             this.sender = sender;
@@ -112,12 +139,17 @@ public class ChatHistory {
         }
         
         public void hideNow() {
-            this.timestamp = System.currentTimeMillis() - 15000;
+            this.hidden = true;
         }
         
         public boolean isRecent() {
+            if (hidden) return false;
             int duration = ChatConfig.getMessageDuration() * 1000;
             return System.currentTimeMillis() - timestamp < duration;
+        }
+        
+        public long getAge() {
+            return System.currentTimeMillis() - timestamp;
         }
     }
 }
